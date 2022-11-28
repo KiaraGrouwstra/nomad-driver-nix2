@@ -1,12 +1,9 @@
-package hello
+package exec
 
 import (
 	"sync"
 )
 
-// taskStore provides a mechanism to store and retrieve
-// task handles given a string identifier. The ID should
-// be unique per task
 type taskStore struct {
 	store map[string]*taskHandle
 	lock  sync.RWMutex
