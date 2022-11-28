@@ -7,7 +7,7 @@ import (
 	"time"
 
 	hclog "github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/nomad/drivers/shared/executor"
+	"github.com/Alexis211/nomad-driver-exec2/executor"
 	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
