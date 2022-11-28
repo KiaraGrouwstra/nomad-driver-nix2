@@ -1,4 +1,4 @@
-package exec
+package exec2
 
 import (
 	"context"
@@ -27,7 +27,7 @@ import (
 
 const (
 	// pluginName is the name of the plugin
-	pluginName = "exec"
+	pluginName = "exec2"
 
 	// fingerprintPeriod is the interval at which the driver will send fingerprint responses
 	fingerprintPeriod = 30 * time.Second
@@ -43,13 +43,6 @@ var (
 	PluginID = loader.PluginID{
 		Name:       pluginName,
 		PluginType: base.PluginTypeDriver,
-	}
-
-	// PluginConfig is the exec driver factory function registered in the
-	// plugin catalog.
-	PluginConfig = &loader.InternalPluginConfig{
-		Config:  map[string]interface{}{},
-		Factory: func(ctx context.Context, l hclog.Logger) interface{} { return NewExecDriver(ctx, l) },
 	}
 
 	// pluginInfo is the response returned for the PluginInfo RPC
@@ -124,6 +117,10 @@ type Driver struct {
 	// ctx is the context for the driver. It is passed to other subsystems to
 	// coordinate shutdown
 	ctx context.Context
+
+	// signalShutdown is called when the driver is shutting down and cancels
+	// the ctx passed to any subsystems
+	signalShutdown context.CancelFunc
 
 	// logger will log to the Nomad agent
 	logger hclog.Logger
@@ -233,13 +230,15 @@ type TaskState struct {
 	StartedAt      time.Time
 }
 
-// NewExecDriver returns a new DrivePlugin implementation
-func NewExecDriver(ctx context.Context, logger hclog.Logger) drivers.DriverPlugin {
+// NewPlugin returns a new DrivePlugin implementation
+func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
+	ctx, cancel := context.WithCancel(context.Background())
 	logger = logger.Named(pluginName)
 	return &Driver{
 		eventer: eventer.NewEventer(ctx, logger),
 		tasks:   newTaskStore(),
 		ctx:     ctx,
+		signalShutdown: cancel,
 		logger:  logger,
 	}
 }
