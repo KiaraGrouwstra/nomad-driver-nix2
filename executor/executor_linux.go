@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -913,7 +914,7 @@ func filepathIsRegular(path string) error {
 	if err != nil {
 		return err
 	}
-	if !f.Mode().Type().IsRegular() {
+	if !(f.Mode().Type().IsRegular() || f.Mode().Type() & fs.ModeType == fs.ModeSymlink) {
 		return fmt.Errorf("path was not a regular file")
 	}
 	return nil

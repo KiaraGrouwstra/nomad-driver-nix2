@@ -434,7 +434,7 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 
 	user := cfg.User
 	if user == "" {
-		user = "nobody"
+		user = "0"
 	}
 
 	if cfg.DNS != nil {
