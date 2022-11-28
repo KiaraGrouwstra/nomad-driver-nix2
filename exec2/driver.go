@@ -71,6 +71,15 @@ var (
 			hclspec.NewAttr("allow_caps", "list(string)", false),
 			hclspec.NewLiteral(capabilities.HCLSpecLiteral),
 		),
+		// Default host directories to bind in tasks
+		"bind": hclspec.NewDefault(
+			hclspec.NewAttr("bind", "list(map(string))", false),
+			hclspec.NewLiteral("{}"),
+		),
+		"bind_read_only": hclspec.NewDefault(
+			hclspec.NewAttr("bind_read_only", "list(map(string))", false),
+			hclspec.NewLiteral("{}"),
+		),
 	})
 
 	// taskConfigSpec is the hcl specification for the driver config section of
@@ -147,6 +156,12 @@ type Config struct {
 	// AllowCaps configures which Linux Capabilities are enabled for tasks
 	// running on this node.
 	AllowCaps []string `codec:"allow_caps"`
+
+	// Paths to bind for read-write acess in all jobs
+	Bind hclutils.MapStrStr `codec:"bind"`
+
+	// Paths to bind for read-only acess in all jobs
+	BindReadOnly hclutils.MapStrStr `codec:"bind_read_only"`
 }
 
 func (c *Config) validate() error {
@@ -288,6 +303,7 @@ func (d *Driver) SetConfig(cfg *base.Config) error {
 	if err := config.validate(); err != nil {
 		return err
 	}
+	d.logger.Info("Got config", "driver_config", hclog.Fmt("%+v", config))
 	d.config = config
 
 	return nil
@@ -445,6 +461,33 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 		cfg.Mounts = append(cfg.Mounts, dnsMount)
 	}
 
+	// Bind mounts specified in driver config
+	if d.config.Bind != nil {
+		for host, task := range d.config.Bind {
+			mount_config := drivers.MountConfig{
+				TaskPath:        task,
+				HostPath:        host,
+				Readonly:        false,
+				PropagationMode: "private",
+			}
+			d.logger.Info("adding RW mount from driver config", "mount_config", hclog.Fmt("%+v", mount_config))
+			cfg.Mounts = append(cfg.Mounts, &mount_config)
+		}
+	}
+	if d.config.BindReadOnly != nil {
+		for host, task := range d.config.BindReadOnly {
+			mount_config := drivers.MountConfig{
+				TaskPath:        task,
+				HostPath:        host,
+				Readonly:        true,
+				PropagationMode: "private",
+			}
+			d.logger.Info("adding RO mount from driver config", "mount_config", hclog.Fmt("%+v", mount_config))
+			cfg.Mounts = append(cfg.Mounts, &mount_config)
+		}
+	}
+
+	// Bind mounts specified in task config
 	if driverConfig.Bind != nil {
 		for host, task := range driverConfig.Bind {
 			mount_config := drivers.MountConfig{
@@ -453,7 +496,7 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 				Readonly:        false,
 				PropagationMode: "private",
 			}
-			d.logger.Info("got mount (RW)", "mount_config", hclog.Fmt("%+v", mount_config))
+			d.logger.Info("adding RW mount from task spec", "mount_config", hclog.Fmt("%+v", mount_config))
 			cfg.Mounts = append(cfg.Mounts, &mount_config)
 		}
 	}
@@ -465,7 +508,7 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 				Readonly:        true,
 				PropagationMode: "private",
 			}
-			d.logger.Info("got mount (RO)", "mount_config", hclog.Fmt("%+v", mount_config))
+			d.logger.Info("adding RO mount from task spec", "mount_config", hclog.Fmt("%+v", mount_config))
 			cfg.Mounts = append(cfg.Mounts, &mount_config)
 		}
 	}
