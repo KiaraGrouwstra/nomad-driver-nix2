@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
 	"github.com/hashicorp/nomad/drivers/shared/executor"
 	"github.com/hashicorp/nomad/drivers/shared/resolvconf"
+	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
 	"github.com/hashicorp/nomad/helper/pluginutils/loader"
 	"github.com/hashicorp/nomad/helper/pointer"
 	"github.com/hashicorp/nomad/plugins/base"
@@ -76,12 +77,14 @@ var (
 	// taskConfigSpec is the hcl specification for the driver config section of
 	// a task within a job. It is returned in the TaskConfigSchema RPC
 	taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-		"command":  hclspec.NewAttr("command", "string", true),
-		"args":     hclspec.NewAttr("args", "list(string)", false),
-		"pid_mode": hclspec.NewAttr("pid_mode", "string", false),
-		"ipc_mode": hclspec.NewAttr("ipc_mode", "string", false),
-		"cap_add":  hclspec.NewAttr("cap_add", "list(string)", false),
-		"cap_drop": hclspec.NewAttr("cap_drop", "list(string)", false),
+		"command":        hclspec.NewAttr("command", "string", true),
+		"args":           hclspec.NewAttr("args", "list(string)", false),
+		"bind":           hclspec.NewAttr("bind", "list(map(string))", false),
+		"bind_read_only": hclspec.NewAttr("bind_read_only", "list(map(string))", false),
+		"pid_mode":       hclspec.NewAttr("pid_mode", "string", false),
+		"ipc_mode":       hclspec.NewAttr("ipc_mode", "string", false),
+		"cap_add":        hclspec.NewAttr("cap_add", "list(string)", false),
+		"cap_drop":       hclspec.NewAttr("cap_drop", "list(string)", false),
 	})
 
 	// driverCapabilities represents the RPC response for what features are
@@ -179,6 +182,12 @@ type TaskConfig struct {
 	// Args are passed along to Command.
 	Args []string `codec:"args"`
 
+	// Paths to bind for read-write acess
+	Bind hclutils.MapStrStr `codec:"bind"`
+
+	// Paths to bind for read-only acess
+	BindReadOnly hclutils.MapStrStr `codec:"bind_read_only"`
+
 	// ModePID indicates whether PID namespace isolation is enabled for the task.
 	// Must be "private" or "host" if set.
 	ModePID string `codec:"pid_mode"`
@@ -235,11 +244,11 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 	ctx, cancel := context.WithCancel(context.Background())
 	logger = logger.Named(pluginName)
 	return &Driver{
-		eventer: eventer.NewEventer(ctx, logger),
-		tasks:   newTaskStore(),
-		ctx:     ctx,
+		eventer:        eventer.NewEventer(ctx, logger),
+		tasks:          newTaskStore(),
+		ctx:            ctx,
 		signalShutdown: cancel,
-		logger:  logger,
+		logger:         logger,
 	}
 }
 
@@ -464,6 +473,27 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 			return nil, nil, fmt.Errorf("failed to build mount for resolv.conf: %v", err)
 		}
 		cfg.Mounts = append(cfg.Mounts, dnsMount)
+	}
+
+	if driverConfig.Bind != nil {
+		for k, v := range driverConfig.Bind {
+			cfg.Mounts = append(cfg.Mounts, &drivers.MountConfig{
+				TaskPath:        v,
+				HostPath:        k,
+				Readonly:        false,
+				PropagationMode: "private",
+			})
+		}
+	}
+	if driverConfig.BindReadOnly != nil {
+		for k, v := range driverConfig.Bind {
+			cfg.Mounts = append(cfg.Mounts, &drivers.MountConfig{
+				TaskPath:        v,
+				HostPath:        k,
+				Readonly:        true,
+				PropagationMode: "private",
+			})
+		}
 	}
 
 	caps, err := capabilities.Calculate(
