@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -92,7 +91,7 @@ var (
 	driverCapabilities = &drivers.Capabilities{
 		SendSignals: true,
 		Exec:        true,
-		FSIsolation: drivers.FSIsolationChroot,
+		FSIsolation: drivers.FSIsolationNone,
 		NetIsolationModes: []drivers.NetIsolationMode{
 			drivers.NetIsolationModeHost,
 			drivers.NetIsolationModeGroup,
@@ -110,9 +109,6 @@ type Driver struct {
 
 	// config is the driver configuration set by the SetConfig RPC
 	config Config
-
-	// nomadConfig is the client config from nomad
-	nomadConfig *base.ClientDriverConfig
 
 	// tasks is the in memory datastore mapping taskIDs to driverHandles
 	tasks *taskStore
@@ -233,7 +229,6 @@ func (tc *TaskConfig) validate() error {
 // StartTask. This information is needed to rebuild the task state and handler
 // during recovery.
 type TaskState struct {
-	ReattachConfig *pstructs.ReattachConfig
 	TaskConfig     *drivers.TaskConfig
 	Pid            int
 	StartedAt      time.Time
@@ -295,9 +290,6 @@ func (d *Driver) SetConfig(cfg *base.Config) error {
 	}
 	d.config = config
 
-	if cfg != nil && cfg.AgentConfig != nil {
-		d.nomadConfig = cfg.AgentConfig.Driver
-	}
 	return nil
 }
 
@@ -399,24 +391,13 @@ func (d *Driver) RecoverTask(handle *drivers.TaskHandle) error {
 		return fmt.Errorf("failed to decode task state from handle: %v", err)
 	}
 
-	// Create client for reattached executor
-	plugRC, err := pstructs.ReattachConfigToGoPlugin(taskState.ReattachConfig)
-	if err != nil {
-		d.logger.Error("failed to build ReattachConfig from task state", "error", err, "task_id", handle.Config.ID)
-		return fmt.Errorf("failed to build ReattachConfig from task state: %v", err)
-	}
-
-	exec, pluginClient, err := executor.ReattachToExecutor(plugRC,
-		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID))
-	if err != nil {
-		d.logger.Error("failed to reattach to executor", "error", err, "task_id", handle.Config.ID)
-		return fmt.Errorf("failed to reattach to executor: %v", err)
-	}
+	// Create new executor
+	exec := executor.NewExecutorWithIsolation(
+		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID),)
 
 	h := &taskHandle{
 		exec:         exec,
 		pid:          taskState.Pid,
-		pluginClient: pluginClient,
 		taskConfig:   taskState.TaskConfig,
 		procState:    drivers.TaskStateRunning,
 		startedAt:    taskState.StartedAt,
@@ -448,19 +429,8 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 	handle := drivers.NewTaskHandle(taskHandleVersion)
 	handle.Config = cfg
 
-	pluginLogFile := filepath.Join(cfg.TaskDir().Dir, "executor.out")
-	executorConfig := &executor.ExecutorConfig{
-		LogFile:     pluginLogFile,
-		LogLevel:    "debug",
-		FSIsolation: true,
-	}
-
-	exec, pluginClient, err := executor.CreateExecutor(
-		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID),
-		d.nomadConfig, executorConfig)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create executor: %v", err)
-	}
+	exec := executor.NewExecutorWithIsolation(
+		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID),)
 
 	user := cfg.User
 	if user == "" {
@@ -476,23 +446,27 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 	}
 
 	if driverConfig.Bind != nil {
-		for k, v := range driverConfig.Bind {
-			cfg.Mounts = append(cfg.Mounts, &drivers.MountConfig{
-				TaskPath:        v,
-				HostPath:        k,
+		for host, task := range driverConfig.Bind {
+			mount_config := drivers.MountConfig{
+				TaskPath:        task,
+				HostPath:        host,
 				Readonly:        false,
 				PropagationMode: "private",
-			})
+			}
+			d.logger.Info("got mount (RW)", "mount_config", hclog.Fmt("%+v", mount_config))
+			cfg.Mounts = append(cfg.Mounts, &mount_config)
 		}
 	}
 	if driverConfig.BindReadOnly != nil {
-		for k, v := range driverConfig.Bind {
-			cfg.Mounts = append(cfg.Mounts, &drivers.MountConfig{
-				TaskPath:        v,
-				HostPath:        k,
+		for host, task := range driverConfig.BindReadOnly {
+			mount_config := drivers.MountConfig{
+				TaskPath:        task,
+				HostPath:        host,
 				Readonly:        true,
 				PropagationMode: "private",
-			})
+			}
+			d.logger.Info("got mount (RO)", "mount_config", hclog.Fmt("%+v", mount_config))
+			cfg.Mounts = append(cfg.Mounts, &mount_config)
 		}
 	}
 
@@ -522,17 +496,17 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 		ModeIPC:          executor.IsolationMode(d.config.DefaultModeIPC, driverConfig.ModeIPC),
 		Capabilities:     caps,
 	}
+	
+	d.logger.Info("launching with", "exec_cmd", hclog.Fmt("%+v", execCmd))
 
 	ps, err := exec.Launch(execCmd)
 	if err != nil {
-		pluginClient.Kill()
 		return nil, nil, fmt.Errorf("failed to launch command with executor: %v", err)
 	}
 
 	h := &taskHandle{
 		exec:         exec,
 		pid:          ps.Pid,
-		pluginClient: pluginClient,
 		taskConfig:   cfg,
 		procState:    drivers.TaskStateRunning,
 		startedAt:    time.Now().Round(time.Millisecond),
@@ -540,7 +514,6 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 	}
 
 	driverState := TaskState{
-		ReattachConfig: pstructs.ReattachConfigFromGoPlugin(pluginClient.ReattachConfig()),
 		Pid:            ps.Pid,
 		TaskConfig:     cfg,
 		StartedAt:      h.startedAt,
@@ -549,7 +522,6 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 	if err := handle.SetDriverState(&driverState); err != nil {
 		d.logger.Error("failed to start task, error setting driver state", "error", err)
 		_ = exec.Shutdown("", 0)
-		pluginClient.Kill()
 		return nil, nil, fmt.Errorf("failed to set driver state: %v", err)
 	}
 
@@ -601,9 +573,6 @@ func (d *Driver) StopTask(taskID string, timeout time.Duration, signal string) e
 	}
 
 	if err := handle.exec.Shutdown(signal, timeout); err != nil {
-		if handle.pluginClient.Exited() {
-			return nil
-		}
 		return fmt.Errorf("executor Shutdown failed: %v", err)
 	}
 
@@ -639,12 +608,8 @@ func (d *Driver) DestroyTask(taskID string, force bool) error {
 		return fmt.Errorf("cannot destroy running task")
 	}
 
-	if !handle.pluginClient.Exited() {
-		if err := handle.exec.Shutdown("", 0); err != nil {
-			handle.logger.Error("destroying executor failed", "error", err)
-		}
-
-		handle.pluginClient.Kill()
+	if err := handle.exec.Shutdown("", 0); err != nil {
+		handle.logger.Error("destroying executor failed", "error", err)
 	}
 
 	// workaround for the case where DestroyTask was issued on task restart

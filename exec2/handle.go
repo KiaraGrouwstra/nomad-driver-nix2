@@ -7,7 +7,6 @@ import (
 	"time"
 
 	hclog "github.com/hashicorp/go-hclog"
-	plugin "github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/nomad/drivers/shared/executor"
 	"github.com/hashicorp/nomad/plugins/drivers"
 )
@@ -15,7 +14,6 @@ import (
 type taskHandle struct {
 	exec         executor.Executor
 	pid          int
-	pluginClient *plugin.Client
 	logger       hclog.Logger
 
 	// stateLock syncs access to all fields below

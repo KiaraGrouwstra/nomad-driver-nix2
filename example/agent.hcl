@@ -1,7 +1,7 @@
-log_level = "TRACE"
+#log_level = "TRACE"
 
-plugin "hello-driver" {
-  config {
-    shell = "bash"
-  }
+client {
+}
+
+plugin "exec2" {
 }
