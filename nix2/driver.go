@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"git.deuxfleurs.fr/lx/nomad-driver-nix2/executor"
+	"git.deuxfleurs.fr/Deuxfleurs/nomad-driver-nix2/executor"
 	"github.com/hashicorp/consul-template/signals"
 	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/client/lib/cgutil"

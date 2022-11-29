@@ -1,4 +1,4 @@
-module git.deuxfleurs.fr/lx/nomad-driver-nix2
+module git.deuxfleurs.fr/Deuxfleurs/nomad-driver-nix2
 
 go 1.19
 

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"git.deuxfleurs.fr/lx/nomad-driver-nix2/nix2"
+	"git.deuxfleurs.fr/Deuxfleurs/nomad-driver-nix2/nix2"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/plugins"
