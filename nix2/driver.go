@@ -8,12 +8,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Alexis211/nomad-driver-exec2/executor"
 	"github.com/hashicorp/consul-template/signals"
 	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/client/lib/cgutil"
 	"github.com/hashicorp/nomad/drivers/shared/capabilities"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
-	"github.com/Alexis211/nomad-driver-exec2/executor"
 	"github.com/hashicorp/nomad/drivers/shared/resolvconf"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
 	"github.com/hashicorp/nomad/helper/pluginutils/loader"
@@ -71,14 +71,9 @@ var (
 			hclspec.NewAttr("allow_caps", "list(string)", false),
 			hclspec.NewLiteral(capabilities.HCLSpecLiteral),
 		),
-		// Default host directories to bind in tasks
-		"bind": hclspec.NewDefault(
-			hclspec.NewAttr("bind", "list(map(string))", false),
-			hclspec.NewLiteral("{}"),
-		),
-		"bind_read_only": hclspec.NewDefault(
-			hclspec.NewAttr("bind_read_only", "list(map(string))", false),
-			hclspec.NewLiteral("{}"),
+		"allow_bind": hclspec.NewDefault(
+			hclspec.NewAttr("allow_bind", "bool", false),
+			hclspec.NewLiteral("true"),
 		),
 	})
 
@@ -157,11 +152,8 @@ type Config struct {
 	// running on this node.
 	AllowCaps []string `codec:"allow_caps"`
 
-	// Paths to bind for read-write acess in all jobs
-	Bind hclutils.MapStrStr `codec:"bind"`
-
-	// Paths to bind for read-only acess in all jobs
-	BindReadOnly hclutils.MapStrStr `codec:"bind_read_only"`
+	// AllowBind defines whether users may bind host directories
+	AllowBind bool `codec:"allow_bind"`
 }
 
 func (c *Config) validate() error {
@@ -244,9 +236,9 @@ func (tc *TaskConfig) validate() error {
 // StartTask. This information is needed to rebuild the task state and handler
 // during recovery.
 type TaskState struct {
-	TaskConfig     *drivers.TaskConfig
-	Pid            int
-	StartedAt      time.Time
+	TaskConfig *drivers.TaskConfig
+	Pid        int
+	StartedAt  time.Time
 }
 
 // NewPlugin returns a new DrivePlugin implementation
@@ -409,16 +401,16 @@ func (d *Driver) RecoverTask(handle *drivers.TaskHandle) error {
 
 	// Create new executor
 	exec := executor.NewExecutorWithIsolation(
-		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID),)
+		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID))
 
 	h := &taskHandle{
-		exec:         exec,
-		pid:          taskState.Pid,
-		taskConfig:   taskState.TaskConfig,
-		procState:    drivers.TaskStateRunning,
-		startedAt:    taskState.StartedAt,
-		exitResult:   &drivers.ExitResult{},
-		logger:       d.logger,
+		exec:       exec,
+		pid:        taskState.Pid,
+		taskConfig: taskState.TaskConfig,
+		procState:  drivers.TaskStateRunning,
+		startedAt:  taskState.StartedAt,
+		exitResult: &drivers.ExitResult{},
+		logger:     d.logger,
 	}
 
 	d.tasks.Set(taskState.TaskConfig.ID, h)
@@ -446,7 +438,7 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 	handle.Config = cfg
 
 	exec := executor.NewExecutorWithIsolation(
-		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID),)
+		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID))
 
 	user := cfg.User
 	if user == "" {
@@ -462,54 +454,36 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 	}
 
 	// Bind mounts specified in driver config
-	if d.config.Bind != nil {
-		for host, task := range d.config.Bind {
-			mount_config := drivers.MountConfig{
-				TaskPath:        task,
-				HostPath:        host,
-				Readonly:        false,
-				PropagationMode: "private",
-			}
-			d.logger.Info("adding RW mount from driver config", "mount_config", hclog.Fmt("%+v", mount_config))
-			cfg.Mounts = append(cfg.Mounts, &mount_config)
-		}
-	}
-	if d.config.BindReadOnly != nil {
-		for host, task := range d.config.BindReadOnly {
-			mount_config := drivers.MountConfig{
-				TaskPath:        task,
-				HostPath:        host,
-				Readonly:        true,
-				PropagationMode: "private",
-			}
-			d.logger.Info("adding RO mount from driver config", "mount_config", hclog.Fmt("%+v", mount_config))
-			cfg.Mounts = append(cfg.Mounts, &mount_config)
-		}
-	}
 
 	// Bind mounts specified in task config
-	if driverConfig.Bind != nil {
-		for host, task := range driverConfig.Bind {
-			mount_config := drivers.MountConfig{
-				TaskPath:        task,
-				HostPath:        host,
-				Readonly:        false,
-				PropagationMode: "private",
+	if d.config.AllowBind {
+		if driverConfig.Bind != nil {
+			for host, task := range driverConfig.Bind {
+				mount_config := drivers.MountConfig{
+					TaskPath:        task,
+					HostPath:        host,
+					Readonly:        false,
+					PropagationMode: "private",
+				}
+				d.logger.Info("adding RW mount from task spec", "mount_config", hclog.Fmt("%+v", mount_config))
+				cfg.Mounts = append(cfg.Mounts, &mount_config)
 			}
-			d.logger.Info("adding RW mount from task spec", "mount_config", hclog.Fmt("%+v", mount_config))
-			cfg.Mounts = append(cfg.Mounts, &mount_config)
 		}
-	}
-	if driverConfig.BindReadOnly != nil {
-		for host, task := range driverConfig.BindReadOnly {
-			mount_config := drivers.MountConfig{
-				TaskPath:        task,
-				HostPath:        host,
-				Readonly:        true,
-				PropagationMode: "private",
+		if driverConfig.BindReadOnly != nil {
+			for host, task := range driverConfig.BindReadOnly {
+				mount_config := drivers.MountConfig{
+					TaskPath:        task,
+					HostPath:        host,
+					Readonly:        true,
+					PropagationMode: "private",
+				}
+				d.logger.Info("adding RO mount from task spec", "mount_config", hclog.Fmt("%+v", mount_config))
+				cfg.Mounts = append(cfg.Mounts, &mount_config)
 			}
-			d.logger.Info("adding RO mount from task spec", "mount_config", hclog.Fmt("%+v", mount_config))
-			cfg.Mounts = append(cfg.Mounts, &mount_config)
+		}
+	} else {
+		if len(driverConfig.Bind) > 0 || len(driverConfig.BindReadOnly) > 0 {
+			return nil, nil, fmt.Errorf("bind and bind_read_only are deactivated for the %s driver", pluginName)
 		}
 	}
 
@@ -539,7 +513,7 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 		ModeIPC:          executor.IsolationMode(d.config.DefaultModeIPC, driverConfig.ModeIPC),
 		Capabilities:     caps,
 	}
-	
+
 	d.logger.Info("launching with", "exec_cmd", hclog.Fmt("%+v", execCmd))
 
 	ps, err := exec.Launch(execCmd)
@@ -548,18 +522,18 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 	}
 
 	h := &taskHandle{
-		exec:         exec,
-		pid:          ps.Pid,
-		taskConfig:   cfg,
-		procState:    drivers.TaskStateRunning,
-		startedAt:    time.Now().Round(time.Millisecond),
-		logger:       d.logger,
+		exec:       exec,
+		pid:        ps.Pid,
+		taskConfig: cfg,
+		procState:  drivers.TaskStateRunning,
+		startedAt:  time.Now().Round(time.Millisecond),
+		logger:     d.logger,
 	}
 
 	driverState := TaskState{
-		Pid:            ps.Pid,
-		TaskConfig:     cfg,
-		StartedAt:      h.startedAt,
+		Pid:        ps.Pid,
+		TaskConfig: cfg,
+		StartedAt:  h.startedAt,
 	}
 
 	if err := handle.SetDriverState(&driverState); err != nil {
