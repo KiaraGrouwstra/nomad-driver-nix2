@@ -22,6 +22,7 @@ job "nix2-example-service" {
           "cacert",
           "strace",
           "gnugrep",
+          "findutils",
           "mount",
         ]
         command = "python3"

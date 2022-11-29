@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/nomad/client/lib/cgutil"
 	"github.com/hashicorp/nomad/drivers/shared/capabilities"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
+	"github.com/hashicorp/nomad/drivers/shared/resolvconf"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
 	"github.com/hashicorp/nomad/helper/pluginutils/loader"
 	"github.com/hashicorp/nomad/helper/pointer"
@@ -537,10 +538,21 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 
 	// Some files are necessary and should be taken from outside if not present already
 	etcpaths := []string{
-		"/etc/nsswitch.conf", // Necessary for most things
+		"/etc/nsswitch.conf", // Necessary for many things
 		"/etc/passwd",        // Necessary for username/UID lookup
-		"/etc/resolv.conf",   // Necessary for DNS resolution
 	}
+
+	if cfg.DNS != nil {
+		dnsMount, err := resolvconf.GenerateDNSMount(cfg.TaskDir().Dir, cfg.DNS)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to build mount for resolv.conf: %v", err)
+		}
+		cfg.Mounts = append(cfg.Mounts, dnsMount)
+	} else {
+		// Inherit nameserver configuration from host
+		etcpaths = append(etcpaths, "/etc/resolv.conf")
+	}
+
 	for _, f := range etcpaths {
 		if _, ok := systemMounts[f]; !ok {
 			systemMounts[f] = f
