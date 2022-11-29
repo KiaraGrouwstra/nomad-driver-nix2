@@ -8,13 +8,15 @@ import (
 
 	"github.com/Alexis211/nomad-driver-exec2/executor"
 	hclog "github.com/hashicorp/go-hclog"
+	plugin "github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
 type taskHandle struct {
-	exec   executor.Executor
-	pid    int
-	logger hclog.Logger
+	exec         executor.Executor
+	pid          int
+	pluginClient *plugin.Client
+	logger       hclog.Logger
 
 	// stateLock syncs access to all fields below
 	stateLock sync.RWMutex
