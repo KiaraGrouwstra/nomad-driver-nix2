@@ -1,23 +1,34 @@
-module github.com/Alexis211/nomad-driver-exec2
+module git.deuxfleurs.fr/lx/nomad-driver-nix2
 
 go 1.19
 
 require (
+	github.com/LK4D4/joincontext v0.0.0-20171026170139-1724345da6d5
+	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
+	github.com/containernetworking/plugins v1.1.1
+	github.com/creack/pty v1.1.18
+	github.com/golang/protobuf v1.5.2
 	github.com/hashicorp/consul-template v0.29.6-0.20221026140134-90370e07bf62
 	github.com/hashicorp/go-hclog v1.3.1
+	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-plugin v1.4.4
 	github.com/hashicorp/nomad v1.4.2
+	github.com/mitchellh/go-ps v1.0.0
+	github.com/opencontainers/runc v1.1.4
+	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
+	github.com/shirou/gopsutil/v3 v3.22.8
+	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635
+	golang.org/x/sys v0.1.0
+	google.golang.org/grpc v1.48.0
 )
 
 require (
-	github.com/LK4D4/joincontext v0.0.0-20171026170139-1724345da6d5 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.1.1 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.0 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/agext/levenshtein v1.2.1 // indirect
 	github.com/apparentlymart/go-textseg/v13 v13.0.0 // indirect
-	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/armon/go-radix v1.0.0 // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect
@@ -26,9 +37,7 @@ require (
 	github.com/cilium/ebpf v0.9.1 // indirect
 	github.com/container-storage-interface/spec v1.6.0 // indirect
 	github.com/containerd/console v1.0.3 // indirect
-	github.com/containernetworking/plugins v1.1.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
-	github.com/creack/pty v1.1.18 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/docker v20.10.17+incompatible // indirect
@@ -38,7 +47,6 @@ require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
-	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.0.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
@@ -49,7 +57,6 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-msgpack v1.1.5 // indirect
-	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.1 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/go-secure-stdlib/listenerutil v0.1.4 // indirect
@@ -84,7 +91,6 @@ require (
 	github.com/mitchellh/cli v1.1.4 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
-	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/mitchellh/go-testing-interface v1.14.1 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/mitchellh/hashstructure v1.1.0 // indirect
@@ -96,8 +102,6 @@ require (
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/oklog/run v1.1.0 // indirect
 	github.com/onsi/gomega v1.17.0 // indirect
-	github.com/opencontainers/runc v1.1.4 // indirect
-	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417 // indirect
 	github.com/opencontainers/selinux v1.10.1 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -106,12 +110,10 @@ require (
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/seccomp/libseccomp-golang v0.10.0 // indirect
-	github.com/shirou/gopsutil/v3 v3.22.8 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/spf13/cast v1.3.1 // indirect
 	github.com/stretchr/testify v1.8.1 // indirect
-	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635 // indirect
 	github.com/tklauser/go-sysconf v0.3.10 // indirect
 	github.com/tklauser/numcpus v0.5.0 // indirect
 	github.com/vishvananda/netlink v1.2.1-beta.2 // indirect
@@ -126,13 +128,11 @@ require (
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
 	golang.org/x/net v0.0.0-20220906165146-f3363e06e74c // indirect
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
-	golang.org/x/sys v0.1.0 // indirect
 	golang.org/x/text v0.3.8 // indirect
 	golang.org/x/time v0.0.0-20220609170525-579cf78fd858 // indirect
 	golang.org/x/tools v0.1.12 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220712132514-bdd2acd4974d // indirect
-	google.golang.org/grpc v1.48.0 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
