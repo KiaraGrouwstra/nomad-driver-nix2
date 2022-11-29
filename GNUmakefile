@@ -1,4 +1,4 @@
-PLUGIN_BINARY=hello-driver
+PLUGIN_BINARY=nix2-driver
 export GO111MODULE=on
 
 default: build

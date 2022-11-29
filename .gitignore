@@ -1,2 +1,2 @@
-nomad-driver-exec2
-exec2-driver
+nomad-driver-*
+*-driver

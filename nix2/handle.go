@@ -1,4 +1,4 @@
-package exec2
+package nix2
 
 import (
 	"context"
