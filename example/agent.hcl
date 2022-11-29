@@ -3,10 +3,7 @@
 client {
 }
 
-plugin "exec2-driver" {
+plugin "nix2-driver" {
   config {
-    bind_read_only = {
-      "/etc" = "/etc",
-    }
   }
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,7 +16,6 @@ import (
 	"github.com/hashicorp/nomad/client/lib/cgutil"
 	"github.com/hashicorp/nomad/drivers/shared/capabilities"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
-	"github.com/hashicorp/nomad/drivers/shared/resolvconf"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
 	"github.com/hashicorp/nomad/helper/pluginutils/loader"
 	"github.com/hashicorp/nomad/helper/pointer"
@@ -89,6 +89,7 @@ var (
 		"ipc_mode":       hclspec.NewAttr("ipc_mode", "string", false),
 		"cap_add":        hclspec.NewAttr("cap_add", "list(string)", false),
 		"cap_drop":       hclspec.NewAttr("cap_drop", "list(string)", false),
+		"packages":       hclspec.NewAttr("packages", "list(string)", false),
 	})
 
 	// driverCapabilities represents the RPC response for what features are
@@ -208,9 +209,12 @@ type TaskConfig struct {
 
 	// CapDrop is a set of linux capabilities to disable.
 	CapDrop []string `codec:"cap_drop"`
+
+	// List of Nix packages to add to environment
+	Packages []string `codec:"packages"`
 }
 
-func (tc *TaskConfig) validate() error {
+func (tc *TaskConfig) validate(dc *Config) error {
 	switch tc.ModePID {
 	case "", executor.IsolationModePrivate, executor.IsolationModeHost:
 	default:
@@ -231,6 +235,12 @@ func (tc *TaskConfig) validate() error {
 	badDrops := supported.Difference(capabilities.New(tc.CapDrop))
 	if !badDrops.Empty() {
 		return fmt.Errorf("cap_drop configured with capabilities not supported by system: %s", badDrops)
+	}
+
+	if !dc.AllowBind {
+		if len(tc.Bind) > 0 || len(tc.BindReadOnly) > 0 {
+			return fmt.Errorf("bind and bind_read_only are deactivated for the %s driver", pluginName)
+		}
 	}
 
 	return nil
@@ -447,8 +457,14 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 	if err := cfg.DecodeDriverConfig(&driverConfig); err != nil {
 		return nil, nil, fmt.Errorf("failed to decode driver config: %v", err)
 	}
+	if driverConfig.Bind == nil {
+		driverConfig.Bind = make(hclutils.MapStrStr)
+	}
+	if driverConfig.BindReadOnly == nil {
+		driverConfig.BindReadOnly = make(hclutils.MapStrStr)
+	}
 
-	if err := driverConfig.validate(); err != nil {
+	if err := driverConfig.validate(&d.config); err != nil {
 		return nil, nil, fmt.Errorf("failed driver config validation: %v", err)
 	}
 
@@ -475,52 +491,73 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 		user = "0"
 	}
 
-	if cfg.DNS != nil {
-		dnsMount, err := resolvconf.GenerateDNSMount(cfg.TaskDir().Dir, cfg.DNS)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to build mount for resolv.conf: %v", err)
-		}
-		cfg.Mounts = append(cfg.Mounts, dnsMount)
+	// Prepare NixOS packages and setup a bunch of read-only mounts
+	// for system stuff and required NixOS packages
+	d.eventer.EmitEvent(&drivers.TaskEvent{
+		TaskID:    cfg.ID,
+		AllocID:   cfg.AllocID,
+		TaskName:  cfg.Name,
+		Timestamp: time.Now(),
+		Message:   "Building Nix packages and preparing NixOS state",
+		Annotations: map[string]string{
+			"packages": strings.Join(driverConfig.Packages, " "),
+		},
+	})
+	taskDirs := cfg.TaskDir()
+	systemMounts, err := prepareNixPackages(taskDirs.Dir, driverConfig.Packages)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	// Bind mounts specified in driver config
+	// Some files are necessary and should be taken from outside if not present already
+	for _, f := range []string{ "/etc/resolv.conf", "/etc/passwd", "/etc/nsswitch.conf" } {
+		if _, ok := systemMounts[f]; !ok {
+			systemMounts[f] = f
+		}
+	}
+
+	d.logger.Info("adding RO system mounts for Nix stuff / system stuff", "system_mounts", hclog.Fmt("%+v", systemMounts))
+
+	for host, task := range systemMounts {
+		mount_config := drivers.MountConfig{
+			TaskPath:        task,
+			HostPath:        host,
+			Readonly:        true,
+			PropagationMode: "private",
+		}
+		cfg.Mounts = append(cfg.Mounts, &mount_config)
+	}
+
+	// Set PATH to /bin
+	cfg.Env["PATH"] = "/bin"
 
 	// Bind mounts specified in task config
-	if d.config.AllowBind {
-		if driverConfig.Bind != nil {
-			for host, task := range driverConfig.Bind {
-				mount_config := drivers.MountConfig{
-					TaskPath:        task,
-					HostPath:        host,
-					Readonly:        false,
-					PropagationMode: "private",
-				}
-				d.logger.Info("adding RW mount from task spec", "mount_config", hclog.Fmt("%+v", mount_config))
-				cfg.Mounts = append(cfg.Mounts, &mount_config)
-			}
+	for host, task := range driverConfig.Bind {
+		mount_config := drivers.MountConfig{
+			TaskPath:        task,
+			HostPath:        host,
+			Readonly:        false,
+			PropagationMode: "private",
 		}
-		if driverConfig.BindReadOnly != nil {
-			for host, task := range driverConfig.BindReadOnly {
-				mount_config := drivers.MountConfig{
-					TaskPath:        task,
-					HostPath:        host,
-					Readonly:        true,
-					PropagationMode: "private",
-				}
-				d.logger.Info("adding RO mount from task spec", "mount_config", hclog.Fmt("%+v", mount_config))
-				cfg.Mounts = append(cfg.Mounts, &mount_config)
-			}
+		d.logger.Info("adding RW mount from task spec", "mount_config", hclog.Fmt("%+v", mount_config))
+		cfg.Mounts = append(cfg.Mounts, &mount_config)
+	}
+	for host, task := range driverConfig.BindReadOnly {
+		mount_config := drivers.MountConfig{
+			TaskPath:        task,
+			HostPath:        host,
+			Readonly:        true,
+			PropagationMode: "private",
 		}
-	} else {
-		if len(driverConfig.Bind) > 0 || len(driverConfig.BindReadOnly) > 0 {
-			return nil, nil, fmt.Errorf("bind and bind_read_only are deactivated for the %s driver", pluginName)
-		}
+		d.logger.Info("adding RO mount from task spec", "mount_config", hclog.Fmt("%+v", mount_config))
+		cfg.Mounts = append(cfg.Mounts, &mount_config)
 	}
 
 	caps, err := capabilities.Calculate(
 		capabilities.NomadDefaults(), d.config.AllowCaps, driverConfig.CapAdd, driverConfig.CapDrop,
 	)
 	if err != nil {
+		pluginClient.Kill()
 		return nil, nil, err
 	}
 	d.logger.Debug("task capabilities", "capabilities", caps)

@@ -801,18 +801,41 @@ func cmdMounts(mounts []*drivers.MountConfig) []*lconfigs.Mount {
 //
 // See also executor.lookupBin for a version used by non-isolated drivers.
 func lookupTaskBin(command *ExecCommand) (string, string, error) {
+	cmd := command.Cmd
+
+	taskPath, hostPath, err := lookupBinFile(command, cmd)
+	if err == nil {
+		return taskPath, hostPath, nil
+	}
+
+	if !strings.Contains(cmd, "/") {
+		// Look up also in /bin
+		bin := filepath.Join("/bin", cmd)
+		taskPath, hostPath, err = lookupBinFile(command, bin)
+		if err == nil {
+			return taskPath, hostPath, nil
+		}
+
+		return "", "", fmt.Errorf("file %s not found in task dir or in mounts, even when looking up /bin", cmd)
+	} else {
+		// If there's a / in the binary's path, we can't fallback to a PATH search
+		return "", "", fmt.Errorf("file %s not found in task dir or in mounts", cmd)
+	}
+
+}
+
+func lookupBinFile(command *ExecCommand, bin string) (string, string, error) {
 	taskDir := command.TaskDir
-	bin := command.Cmd
 
 	// Check in the local directory
 	localDir := filepath.Join(taskDir, allocdir.TaskLocal)
-	taskPath, hostPath, err := getPathInTaskDir(command.TaskDir, localDir, bin)
+	taskPath, hostPath, err := getPathInTaskDir(taskDir, localDir, bin)
 	if err == nil {
 		return taskPath, hostPath, nil
 	}
 
 	// Check at the root of the task's directory
-	taskPath, hostPath, err = getPathInTaskDir(command.TaskDir, command.TaskDir, bin)
+	taskPath, hostPath, err = getPathInTaskDir(taskDir, taskDir, bin)
 	if err == nil {
 		return taskPath, hostPath, nil
 	}
@@ -825,31 +848,7 @@ func lookupTaskBin(command *ExecCommand) (string, string, error) {
 		}
 	}
 
-	// If there's a / in the binary's path, we can't fallback to a PATH search
-	if strings.Contains(bin, "/") {
-		return "", "", fmt.Errorf("file %s not found under path %s", bin, taskDir)
-	}
-
-	// look for a file using a PATH-style lookup inside the directory
-	// root. Similar to the stdlib's exec.LookPath except:
-	//   - uses a restricted lookup PATH rather than the agent process's PATH env var.
-	//   - does not require that the file is already executable (this will be ensured
-	//     by the caller)
-	//   - does not prevent using relative path as added to exec.LookPath in go1.19
-	//     (this gets fixed-up in the caller)
-
-	// This is a fake PATH so that we're not using the agent's PATH
-	restrictedPaths := []string{"/usr/local/bin", "/usr/bin", "/bin"}
-
-	for _, dir := range restrictedPaths {
-		pathDir := filepath.Join(command.TaskDir, dir)
-		taskPath, hostPath, err = getPathInTaskDir(command.TaskDir, pathDir, bin)
-		if err == nil {
-			return taskPath, hostPath, nil
-		}
-	}
-
-	return "", "", fmt.Errorf("file %s not found under path", bin)
+	return "", "", fmt.Errorf("file %s not found in task dir or in mounts", bin)
 }
 
 // getPathInTaskDir searches for the binary in the task directory and nested
