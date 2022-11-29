@@ -68,6 +68,10 @@ var (
 			hclspec.NewAttr("default_ipc_mode", "string", false),
 			hclspec.NewLiteral(`"private"`),
 		),
+		"default_nixpkgs": hclspec.NewDefault(
+			hclspec.NewAttr("default_nixpkgs", "string", false),
+			hclspec.NewLiteral(`"github:nixos/nixpkgs/nixos-22.05"`),
+		),
 		"allow_caps": hclspec.NewDefault(
 			hclspec.NewAttr("allow_caps", "list(string)", false),
 			hclspec.NewLiteral(capabilities.HCLSpecLiteral),
@@ -89,6 +93,7 @@ var (
 		"ipc_mode":       hclspec.NewAttr("ipc_mode", "string", false),
 		"cap_add":        hclspec.NewAttr("cap_add", "list(string)", false),
 		"cap_drop":       hclspec.NewAttr("cap_drop", "list(string)", false),
+		"nixpkgs":        hclspec.NewAttr("nixpkgs", "string", false),
 		"packages":       hclspec.NewAttr("packages", "list(string)", false),
 	})
 
@@ -153,6 +158,9 @@ type Config struct {
 	// exec-based task drivers.
 	DefaultModeIPC string `codec:"default_ipc_mode"`
 
+	// Nixpkgs flake to use
+	DefaultNixpkgs string `codec:"default_nixpkgs"`
+
 	// AllowCaps configures which Linux Capabilities are enabled for tasks
 	// running on this node.
 	AllowCaps []string `codec:"allow_caps"`
@@ -203,6 +211,9 @@ type TaskConfig struct {
 	// ModeIPC indicates whether IPC namespace isolation is enabled for the task.
 	// Must be "private" or "host" if set.
 	ModeIPC string `codec:"ipc_mode"`
+
+	// Nixpkgs flake to use
+	Nixpkgs string `codec:"nixpkgs"`
 
 	// CapAdd is a set of linux capabilities to enable.
 	CapAdd []string `codec:"cap_add"`
@@ -488,7 +499,19 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 
 	user := cfg.User
 	if user == "" {
-		user = "0"
+		user = "nobody"
+	}
+
+	// Determine the nixpkgs version to use.
+	nixpkgs := driverConfig.Nixpkgs
+	if nixpkgs == "" {
+		nixpkgs = d.config.DefaultNixpkgs
+	}
+	// Use that repo for all packages not specified from a flake already.
+	for i := range driverConfig.Packages {
+		if !strings.Contains(driverConfig.Packages[i], "#") {
+			driverConfig.Packages[i] = nixpkgs + "#" + driverConfig.Packages[i]
+		}
 	}
 
 	// Prepare NixOS packages and setup a bunch of read-only mounts
@@ -498,19 +521,27 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 		AllocID:   cfg.AllocID,
 		TaskName:  cfg.Name,
 		Timestamp: time.Now(),
-		Message:   "Building Nix packages and preparing NixOS state",
+		Message: fmt.Sprintf(
+			"Building Nix packages and preparing NixOS state (using nixpkgs from flake: %s)",
+			nixpkgs,
+		),
 		Annotations: map[string]string{
 			"packages": strings.Join(driverConfig.Packages, " "),
 		},
 	})
 	taskDirs := cfg.TaskDir()
-	systemMounts, err := prepareNixPackages(taskDirs.Dir, driverConfig.Packages)
+	systemMounts, err := prepareNixPackages(taskDirs.Dir, driverConfig.Packages, nixpkgs)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Some files are necessary and should be taken from outside if not present already
-	for _, f := range []string{ "/etc/resolv.conf", "/etc/passwd", "/etc/nsswitch.conf" } {
+	etcpaths := []string{
+		"/etc/nsswitch.conf", // Necessary for most things
+		"/etc/passwd",        // Necessary for username/UID lookup
+		"/etc/resolv.conf",   // Necessary for DNS resolution
+	}
+	for _, f := range etcpaths {
 		if _, ok := systemMounts[f]; !ok {
 			systemMounts[f] = f
 		}

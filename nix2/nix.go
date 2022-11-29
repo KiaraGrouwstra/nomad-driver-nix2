@@ -2,11 +2,11 @@ package nix2
 
 import (
 	"bytes"
-	"path/filepath"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
 )
@@ -15,13 +15,13 @@ const (
 	closureNix = `
 { path }:
 let
-  nixpkgs = builtins.getFlake "github:nixos/nixpkgs/nixos-22.05";
+  nixpkgs = builtins.getFlake "%s";
   inherit (nixpkgs.legacyPackages.x86_64-linux) buildPackages;
 in buildPackages.closureInfo { rootPaths = builtins.storePath path; }
 `
 )
 
-func prepareNixPackages(taskDir string, packages []string) (hclutils.MapStrStr, error) {
+func prepareNixPackages(taskDir string, packages []string, nixpkgs string) (hclutils.MapStrStr, error) {
 	mounts := make(hclutils.MapStrStr)
 
 	profileLink := filepath.Join(taskDir, "current-profile")
@@ -31,7 +31,7 @@ func prepareNixPackages(taskDir string, packages []string) (hclutils.MapStrStr, 
 	}
 
 	closureLink := filepath.Join(taskDir, "current-closure")
-	closure, err := nixBuildClosure(profileLink, closureLink)
+	closure, err := nixBuildClosure(profileLink, closureLink, nixpkgs)
 	if err != nil {
 		return nil, fmt.Errorf("Build of the flakes failed: %v", err)
 	}
@@ -58,8 +58,6 @@ func prepareNixPackages(taskDir string, packages []string) (hclutils.MapStrStr, 
 			}
 		}
 	}
-
-	mounts[filepath.Join(closure, "registration")] = "/registration"
 
 	requisites, err := nixRequisites(closure)
 	if err != nil {
@@ -98,14 +96,14 @@ func nixBuildProfile(flakes []string, link string) (string, error) {
 	}
 }
 
-func nixBuildClosure(profile string, link string) (string, error) {
+func nixBuildClosure(profile string, link string, nixpkgs string) (string, error) {
 	cmd := exec.Command(
 		"nix",
 		"--extra-experimental-features", "nix-command",
 		"--extra-experimental-features", "flakes",
 		"build",
 		"--out-link", link,
-		"--expr", closureNix,
+		"--expr", fmt.Sprintf(closureNix, nixpkgs),
 		"--impure",
 		"--no-write-lock-file",
 		"--argstr", "path", profile)
