@@ -8,12 +8,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Alexis211/nomad-driver-exec2/executor"
 	"github.com/hashicorp/consul-template/signals"
 	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/client/lib/cgutil"
 	"github.com/hashicorp/nomad/drivers/shared/capabilities"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
-	"github.com/Alexis211/nomad-driver-exec2/executor"
 	"github.com/hashicorp/nomad/drivers/shared/resolvconf"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
 	"github.com/hashicorp/nomad/helper/pluginutils/loader"
@@ -244,9 +244,9 @@ func (tc *TaskConfig) validate() error {
 // StartTask. This information is needed to rebuild the task state and handler
 // during recovery.
 type TaskState struct {
-	TaskConfig     *drivers.TaskConfig
-	Pid            int
-	StartedAt      time.Time
+	TaskConfig *drivers.TaskConfig
+	Pid        int
+	StartedAt  time.Time
 }
 
 // NewPlugin returns a new DrivePlugin implementation
@@ -409,16 +409,16 @@ func (d *Driver) RecoverTask(handle *drivers.TaskHandle) error {
 
 	// Create new executor
 	exec := executor.NewExecutorWithIsolation(
-		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID),)
+		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID))
 
 	h := &taskHandle{
-		exec:         exec,
-		pid:          taskState.Pid,
-		taskConfig:   taskState.TaskConfig,
-		procState:    drivers.TaskStateRunning,
-		startedAt:    taskState.StartedAt,
-		exitResult:   &drivers.ExitResult{},
-		logger:       d.logger,
+		exec:       exec,
+		pid:        taskState.Pid,
+		taskConfig: taskState.TaskConfig,
+		procState:  drivers.TaskStateRunning,
+		startedAt:  taskState.StartedAt,
+		exitResult: &drivers.ExitResult{},
+		logger:     d.logger,
 	}
 
 	d.tasks.Set(taskState.TaskConfig.ID, h)
@@ -446,7 +446,7 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 	handle.Config = cfg
 
 	exec := executor.NewExecutorWithIsolation(
-		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID),)
+		d.logger.With("task_name", handle.Config.Name, "alloc_id", handle.Config.AllocID))
 
 	user := cfg.User
 	if user == "" {
@@ -539,7 +539,7 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 		ModeIPC:          executor.IsolationMode(d.config.DefaultModeIPC, driverConfig.ModeIPC),
 		Capabilities:     caps,
 	}
-	
+
 	d.logger.Info("launching with", "exec_cmd", hclog.Fmt("%+v", execCmd))
 
 	ps, err := exec.Launch(execCmd)
@@ -548,18 +548,18 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 	}
 
 	h := &taskHandle{
-		exec:         exec,
-		pid:          ps.Pid,
-		taskConfig:   cfg,
-		procState:    drivers.TaskStateRunning,
-		startedAt:    time.Now().Round(time.Millisecond),
-		logger:       d.logger,
+		exec:       exec,
+		pid:        ps.Pid,
+		taskConfig: cfg,
+		procState:  drivers.TaskStateRunning,
+		startedAt:  time.Now().Round(time.Millisecond),
+		logger:     d.logger,
 	}
 
 	driverState := TaskState{
-		Pid:            ps.Pid,
-		TaskConfig:     cfg,
-		StartedAt:      h.startedAt,
+		Pid:        ps.Pid,
+		TaskConfig: cfg,
+		StartedAt:  h.startedAt,
 	}
 
 	if err := handle.SetDriverState(&driverState); err != nil {
