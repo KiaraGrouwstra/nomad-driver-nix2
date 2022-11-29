@@ -25,7 +25,7 @@ func prepareNixPackages(taskDir string, packages []string, nixpkgs string) (hclu
 	mounts := make(hclutils.MapStrStr)
 
 	profileLink := filepath.Join(taskDir, "current-profile")
-	profile, err := nixBuildProfile(packages, profileLink)
+	profile, err := nixBuildProfile(taskDir, packages, profileLink)
 	if err != nil {
 		return nil, fmt.Errorf("Build of the flakes failed: %v", err)
 	}
@@ -71,7 +71,7 @@ func prepareNixPackages(taskDir string, packages []string, nixpkgs string) (hclu
 	return mounts, nil
 }
 
-func nixBuildProfile(flakes []string, link string) (string, error) {
+func nixBuildProfile(taskDir string, flakes []string, link string) (string, error) {
 	cmd := exec.Command("nix", append(
 		[]string{
 			"--extra-experimental-features", "nix-command",
@@ -84,6 +84,7 @@ func nixBuildProfile(flakes []string, link string) (string, error) {
 		flakes...)...)
 	stderr := &bytes.Buffer{}
 	cmd.Stderr = stderr
+	cmd.Dir = taskDir
 
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("%v failed: %s. Err: %v", cmd.Args, stderr.String(), err)

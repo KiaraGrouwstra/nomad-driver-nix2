@@ -13,17 +13,17 @@ job "nix2-example-service" {
 
       config {
         packages = [
-          "python3",
-          "bash",
-          "coreutils",
-          "curl",
-          "nix",
-          "git",
-          "cacert",
-          "strace",
-          "gnugrep",
-          "findutils",
-          "mount",
+          "#python3",
+          "#bash",
+          "#coreutils",
+          "#curl",
+          "#nix",
+          "#git",
+          "#cacert",
+          "#strace",
+          "#gnugrep",
+          "#findutils",
+          "#mount",
         ]
         command = "python3"
         args = [ "-m", "http.server", "8080" ]

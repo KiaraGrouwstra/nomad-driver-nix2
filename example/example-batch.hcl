@@ -12,8 +12,11 @@ job "nix2-example-batch" {
       driver = "nix2"
 
       config {
+        # Packages contains a list of Nix flakes to include in the environement.
+        # Entries that start with # will be relative to nixpkgs.
+        # Otherwise, they are flake names that are passed directly to Nix build
         packages = [
-          "hello"   # equivalent to "github:nixos/nixpkgs/nixos-22.05#hello"
+          "#hello"   # equivalent to "github:nixos/nixpkgs/nixos-22.05#hello"
         ]
         command = "hello"
       }
@@ -31,7 +34,7 @@ job "nix2-example-batch" {
 
       config {
         packages = [
-          "curl", "cacert"
+          "#curl", "#cacert"
         ]
         command = "curl"
         args = [
@@ -40,6 +43,26 @@ job "nix2-example-batch" {
       }
       env = {
         SSL_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt"
+      }
+    }
+
+    # This example show how to use a flake defined from a file
+    task "nix-hello-flake" {
+      driver = "nix2"
+
+      config {
+        # Packages contains a list of Nix flakes to include in the environement.
+        # Entries that start with # will be relative to nixpkgs.
+        # Otherwise, they are flake names that are passed directly to Nix build
+        packages = [
+          ".#hello"
+        ]
+        command = "hello"
+      }
+
+      template {
+        data = file("flake.nix")
+        destination = "flake.nix"
       }
     }
   }

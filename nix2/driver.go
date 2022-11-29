@@ -510,8 +510,8 @@ func (d *Driver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drive
 	}
 	// Use that repo for all packages not specified from a flake already.
 	for i := range driverConfig.Packages {
-		if !strings.Contains(driverConfig.Packages[i], "#") && !strings.Contains(driverConfig.Packages[i], "/") {
-			driverConfig.Packages[i] = nixpkgs + "#" + driverConfig.Packages[i]
+		if strings.HasPrefix(driverConfig.Packages[i], "#") {
+			driverConfig.Packages[i] = nixpkgs + driverConfig.Packages[i]
 		}
 	}
 
