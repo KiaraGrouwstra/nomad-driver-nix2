@@ -8,8 +8,9 @@ Partially based on [`nomad-driver-nix`](https://github.com/input-output-hk/nomad
 Requirements
 -------------------
 
-- [Go](https://golang.org/doc/install) v1.18 or later (to compile the plugin)
-- [Nomad](https://www.nomadproject.io/downloads.html) v0.9+ (to run the plugin)
+- [Go](https://golang.org/doc/install) v1.19 or later (to compile the plugin)
+- [Nomad](https://www.nomadproject.io/downloads.html) v1.3 or later (to run the plugin)
+- [Nix](https://nixos.org/download.html) v2.11 or later (to run the plugin), either through NixOS or installed in root mode
 
 Building and using the Nix driver plugin
 -------------------
