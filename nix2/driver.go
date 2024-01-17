@@ -71,7 +71,7 @@ var (
 		),
 		"default_nixpkgs": hclspec.NewDefault(
 			hclspec.NewAttr("default_nixpkgs", "string", false),
-			hclspec.NewLiteral(`"github:nixos/nixpkgs/nixos-22.05"`),
+			hclspec.NewLiteral(`"github:nixos/nixpkgs/nixos-23.11"`),
 		),
 		"allow_caps": hclspec.NewDefault(
 			hclspec.NewAttr("allow_caps", "list(string)", false),
