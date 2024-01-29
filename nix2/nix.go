@@ -127,6 +127,7 @@ type nixPathInfo struct {
 	Deriver          string   `json:"deriver"`
 	RegistrationTime uint64   `json:"registrationTime"`
 	Signatures       []string `json:"signatures"`
+	Valid			 bool     `json:"valid"`
 }
 
 func nixRequisites(path string) ([]string, error) {
