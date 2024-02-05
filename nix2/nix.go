@@ -120,14 +120,12 @@ func nixBuildClosure(profile string, link string, nixpkgs string) (string, error
 }
 
 type nixPathInfo struct {
-	Path             string   `json:"path"`
 	NarHash          string   `json:"narHash"`
 	NarSize          uint64   `json:"narSize"`
 	References       []string `json:"references"`
 	Deriver          string   `json:"deriver"`
 	RegistrationTime uint64   `json:"registrationTime"`
 	Signatures       []string `json:"signatures"`
-	Valid			 bool     `json:"valid"`
 }
 
 func nixRequisites(path string) ([]string, error) {
